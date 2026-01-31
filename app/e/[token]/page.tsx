@@ -1,11 +1,10 @@
 // 📂 EMPLACEMENT DU FICHIER : app/e/[token]/page.tsx
 
-import { verifyToken, submitResponse } from '@/app/actions/eventActions'; // Utilisation de l'alias @/ plus robuste
+import { verifyToken, submitResponse } from '@/app/actions/eventActions';
 import { GuestCalendarForm } from '@/app/_components/GuestCalendarForm';
 
 export default async function GuestPage({ params }: { params: Promise<{ token: string }> }) {
 
-    // Utilisation de "await" pour déballer les paramètres (Requis pour Next.js 15+)
     const { token } = await params;
 
     if (!token) {
@@ -14,10 +13,13 @@ export default async function GuestPage({ params }: { params: Promise<{ token: s
 
     const result = await verifyToken(token);
 
-    if (result.error) {
+    // 🛠️ CORRECTIF TYPESCRIPT :
+    // On ajoute "|| !result.event" pour garantir au compilateur que l'event existe.
+    // Si on passe cette condition, TypeScript sait que result.event est défini à 100%.
+    if (result.error || !result.event) {
         return (
             <div className="h-screen flex items-center justify-center font-bold text-red-500">
-                {result.error}
+                {result.error || "Événement introuvable"}
             </div>
         );
     }
