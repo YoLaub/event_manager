@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { getDashboardData, createEvent, generateTokens } from '@/app/actions/eventActions';
 import { LayoutDashboard, Plus } from 'lucide-react';
 import { EventClientManager } from '@/app/_components/EventClientManager';

@@ -1,8 +1,4 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+// prisma/schema.prisma
 
 generator client {
   provider        = "prisma-client-js"
@@ -13,8 +9,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-
-// ... vos modèles Event, Token, Response ...
 model Event {
   id          String   @id @default(cuid())
   title       String
@@ -29,12 +23,18 @@ model Event {
 model Token {
   id        String   @id @default(cuid())
   eventId   String
+
+  // LOGIQUE HYBRIDE : Type de lien
+  type      String   @default("PRIVATE") // "PRIVATE" ou "PUBLIC"
+
   isUsed    Boolean  @default(false)
   usedBy    String?
   createdAt DateTime @default(now())
 
   event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  response  Response?
+
+  // Changement ici : Un token Public peut avoir PLUSIEURS réponses
+  responses Response[]
 
   @@index([eventId])
 }
@@ -42,9 +42,10 @@ model Token {
 model Response {
   id        String   @id @default(cuid())
   eventId   String
-  tokenId   String   @unique
+  tokenId   String   // Suppression de @unique ici pour permettre plusieurs réponses sur un même token public
+
   guestName String
-  dates     String
+  dates     String   @db.Text // JSON stringifié
   comment   String?  @db.Text
   createdAt DateTime @default(now())
 
@@ -52,4 +53,5 @@ model Response {
   token     Token    @relation(fields: [tokenId], references: [id])
 
   @@index([eventId])
+  @@index([tokenId]) // Ajout d'un index pour la performance
 }

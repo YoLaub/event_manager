@@ -3,21 +3,31 @@
 import { prisma } from '@/app/lib/prisma';
 import { revalidatePath } from 'next/cache';
 
-// --- ACTIONS ADMIN (On ne touche pas, ça marche avec les <form>) ---
+// --- ACTIONS ADMIN ---
 
 export async function createEvent(formData: FormData) {
     const title = formData.get('title') as string;
 
-    await prisma.event.create({
+    const event = await prisma.event.create({
         data: { title }
+    });
+
+    // ARCHITECTURE HYBRIDE : On crée automatiquement un lien PUBLIC (Groupe)
+    await prisma.token.create({
+        data: {
+            eventId: event.id,
+            type: 'PUBLIC' // Assure-toi d'avoir ajouté ce champ dans ton schema.prisma
+        }
     });
 
     revalidatePath('/');
 }
 
 export async function generateTokens(eventId: string, count: number) {
+    // Les liens générés manuellement sont des liens PRIVÉS
     const tokensData = Array.from({ length: count }).map(() => ({
         eventId,
+        type: 'PRIVATE'
     }));
 
     await prisma.token.createMany({
@@ -57,46 +67,55 @@ export async function verifyToken(tokenId: string) {
     });
 
     if (!token) return { error: "Lien invalide" };
-    if (token.isUsed) return { error: "Ce lien a déjà été utilisé" };
+
+    // LOGIQUE HYBRIDE :
+    // Si c'est un lien PRIVÉ et qu'il est déjà utilisé -> Erreur
+    // Si c'est un lien PUBLIC -> On laisse passer (c'est un lien de groupe)
+    if (token.type === 'PRIVATE' && token.isUsed) {
+        return { error: "Ce lien a déjà été utilisé" };
+    }
 
     return { success: true, event: token.event };
 }
 
-/**
- * CORRECTION ICI :
- * On change la signature pour accepter les types bruts envoyés par le composant React.
- * On ne passe plus 'formData' mais 'name', 'dates' (array), 'comment'.
- */
 export async function submitResponse(tokenId: string, name: string, dates: string[], comment: string) {
-
-    // 1. On récupère l'info du token pour être sûr de l'eventId (Sécurité)
     const tokenDoc = await prisma.token.findUnique({
         where: { id: tokenId }
     });
 
     if (!tokenDoc) throw new Error("Token introuvable");
 
-    // 2. On transforme le tableau JS ["2024-01-01"] en String pour MySQL
+    // Conversion pour MySQL
     const datesJSON = JSON.stringify(dates);
 
-    await prisma.$transaction([
+    // Préparation des opérations pour la transaction
+    // 1. On crée la réponse dans tous les cas
+    const operations: any[] = [
         prisma.response.create({
             data: {
                 guestName: name,
-                dates: datesJSON, // On stocke la string
+                dates: datesJSON,
                 comment: comment,
-                eventId: tokenDoc.eventId, // On utilise l'ID de l'event lié au token
+                eventId: tokenDoc.eventId,
                 tokenId: tokenId
             }
-        }),
-        prisma.token.update({
-            where: { id: tokenId },
-            data: {
-                isUsed: true,
-                usedBy: name
-            }
         })
-    ]);
+    ];
+
+    // 2. On ne ferme le token (isUsed=true) QUE s'il est PRIVÉ
+    if (tokenDoc.type === 'PRIVATE') {
+        operations.push(
+            prisma.token.update({
+                where: { id: tokenId },
+                data: {
+                    isUsed: true,
+                    usedBy: name
+                }
+            })
+        );
+    }
+
+    await prisma.$transaction(operations);
 
     return { success: true };
 }
