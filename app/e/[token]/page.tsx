@@ -36,6 +36,8 @@ export default async function GuestPage({ params }: { params: Promise<{ token: s
                         eventId={result.event.id}
                         tokenId={token}
                         submitAction={submitResponse}
+                        // NOUVEAU : On passe les réponses existantes
+                        existingResponses={result.event.responses}
                     />
                 </div>
             </div>

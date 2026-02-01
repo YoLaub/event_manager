@@ -60,62 +60,49 @@ export async function getDashboardData() {
 
 // --- ACTIONS INVITÉ ---
 
+// --- ACTIONS INVITÉ ---
+
 export async function verifyToken(tokenId: string) {
     const token = await prisma.token.findUnique({
         where: { id: tokenId },
-        include: { event: true }
+        include: {
+            event: {
+                // UPDATE ICI : On inclut les réponses pour les afficher à l'invité
+                include: { responses: true }
+            }
+        }
     });
 
     if (!token) return { error: "Lien invalide" };
-
-    // LOGIQUE HYBRIDE :
-    // Si c'est un lien PRIVÉ et qu'il est déjà utilisé -> Erreur
-    // Si c'est un lien PUBLIC -> On laisse passer (c'est un lien de groupe)
-    if (token.type === 'PRIVATE' && token.isUsed) {
-        return { error: "Ce lien a déjà été utilisé" };
-    }
+    if (token.type === 'PRIVATE' && token.isUsed) return { error: "Ce lien a déjà été utilisé" };
 
     return { success: true, event: token.event };
 }
 
 export async function submitResponse(tokenId: string, name: string, dates: string[], comment: string) {
-    const tokenDoc = await prisma.token.findUnique({
-        where: { id: tokenId }
-    });
-
+    const tokenDoc = await prisma.token.findUnique({ where: { id: tokenId } });
     if (!tokenDoc) throw new Error("Token introuvable");
 
-    // Conversion pour MySQL
     const datesJSON = JSON.stringify(dates);
 
-    // Préparation des opérations pour la transaction
-    // 1. On crée la réponse dans tous les cas
-    const operations: any[] = [
-        prisma.response.create({
+    await prisma.$transaction(async (tx) => {
+        await tx.response.create({
             data: {
                 guestName: name,
-                dates: datesJSON,
+                dates: datesJSON, // Note: Assure-toi que ton schema a bien 'selectedDates' ou 'dates' (on a utilisé 'dates' String @db.Text dans le dernier schema valide)
                 comment: comment,
                 eventId: tokenDoc.eventId,
                 tokenId: tokenId
             }
-        })
-    ];
+        });
 
-    // 2. On ne ferme le token (isUsed=true) QUE s'il est PRIVÉ
-    if (tokenDoc.type === 'PRIVATE') {
-        operations.push(
-            prisma.token.update({
+        if (tokenDoc.type === 'PRIVATE') {
+            await tx.token.update({
                 where: { id: tokenId },
-                data: {
-                    isUsed: true,
-                    usedBy: name
-                }
-            })
-        );
-    }
-
-    await prisma.$transaction(operations);
+                data: { isUsed: true, usedBy: name }
+            });
+        }
+    });
 
     return { success: true };
 }
