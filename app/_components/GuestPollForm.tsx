@@ -87,7 +87,7 @@ export function GuestPollForm({
             {/* 1. Prénom */}
             <div className="space-y-3">
                 <label className="text-xs font-black text-slate-400 uppercase tracking-widest px-1">
-                    1. Ton Prénom
+                    1. Ton prénom et ton nom
                 </label>
                 <input
                     value={userName}
