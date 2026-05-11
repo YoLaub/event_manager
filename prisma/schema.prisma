@@ -10,11 +10,14 @@ datasource db {
 }
 
 model Event {
-  id          String   @id @default(cuid())
-  title       String
-  description String?  @db.Text
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                   String   @id @default(cuid())
+  title                String
+  description          String?  @db.Text
+  type                 String   @default("DATE_POLL") // "DATE_POLL" | "SIMPLE_POLL"
+  pollOptions          String?  @db.Text               // JSON array of strings
+  allowMultipleChoices Boolean  @default(false)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   tokens    Token[]
   responses Response[]
@@ -45,7 +48,8 @@ model Response {
   tokenId   String   // Suppression de @unique ici pour permettre plusieurs réponses sur un même token public
 
   guestName String
-  dates     String   @db.Text // JSON stringifié
+  dates     String?  @db.Text // JSON stringifié — pour DATE_POLL
+  choices   String?  @db.Text // JSON stringifié — pour SIMPLE_POLL
   comment   String?  @db.Text
   createdAt DateTime @default(now())
 

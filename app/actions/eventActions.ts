@@ -7,16 +7,24 @@ import { revalidatePath } from 'next/cache';
 
 export async function createEvent(formData: FormData) {
     const title = formData.get('title') as string;
+    const type = (formData.get('type') as string) || 'DATE_POLL';
+    const allowMultipleChoices = formData.get('allowMultipleChoices') === 'true';
+    const pollOptionsRaw = formData.get('pollOptions') as string | null;
+    const pollOptions = pollOptionsRaw ?? null;
 
     const event = await prisma.event.create({
-        data: { title }
+        data: {
+            title,
+            type,
+            pollOptions,
+            allowMultipleChoices,
+        }
     });
 
-    // ARCHITECTURE HYBRIDE : On crée automatiquement un lien PUBLIC (Groupe)
     await prisma.token.create({
         data: {
             eventId: event.id,
-            type: 'PUBLIC' // Assure-toi d'avoir ajouté ce champ dans ton schema.prisma
+            type: 'PUBLIC'
         }
     });
 
@@ -24,7 +32,6 @@ export async function createEvent(formData: FormData) {
 }
 
 export async function generateTokens(eventId: string, count: number) {
-    // Les liens générés manuellement sont des liens PRIVÉS
     const tokensData = Array.from({ length: count }).map(() => ({
         eventId,
         type: 'PRIVATE'
@@ -46,19 +53,16 @@ export async function getDashboardData() {
         orderBy: { createdAt: 'desc' }
     });
 
-    // Adaptation MySQL (JSON string -> Array)
-    const eventsWithParsedDates = events.map(event => ({
+    return events.map(event => ({
         ...event,
+        pollOptions: event.pollOptions ? JSON.parse(event.pollOptions) : [],
         responses: event.responses.map(response => ({
             ...response,
-            dates: response.dates ? JSON.parse(response.dates as string) : []
+            dates: response.dates ? JSON.parse(response.dates) : [],
+            choices: response.choices ? JSON.parse(response.choices) : [],
         }))
     }));
-
-    return eventsWithParsedDates;
 }
-
-// --- ACTIONS INVITÉ ---
 
 // --- ACTIONS INVITÉ ---
 
@@ -67,7 +71,6 @@ export async function verifyToken(tokenId: string) {
         where: { id: tokenId },
         include: {
             event: {
-                // UPDATE ICI : On inclut les réponses pour les afficher à l'invité
                 include: { responses: true }
             }
         }
@@ -76,21 +79,36 @@ export async function verifyToken(tokenId: string) {
     if (!token) return { error: "Lien invalide" };
     if (token.type === 'PRIVATE' && token.isUsed) return { error: "Ce lien a déjà été utilisé" };
 
-    return { success: true, event: token.event };
+    const event = {
+        ...token.event,
+        pollOptions: token.event.pollOptions ? JSON.parse(token.event.pollOptions) : [],
+        responses: token.event.responses.map(r => ({
+            ...r,
+            dates: r.dates ? JSON.parse(r.dates) : [],
+            choices: r.choices ? JSON.parse(r.choices) : [],
+        }))
+    };
+
+    return { success: true, event };
 }
 
-export async function submitResponse(tokenId: string, name: string, dates: string[], comment: string) {
+export async function submitResponse(
+    tokenId: string,
+    name: string,
+    dates: string[],
+    comment: string,
+    choices: string[] = []
+) {
     const tokenDoc = await prisma.token.findUnique({ where: { id: tokenId } });
     if (!tokenDoc) throw new Error("Token introuvable");
-
-    const datesJSON = JSON.stringify(dates);
 
     await prisma.$transaction(async (tx) => {
         await tx.response.create({
             data: {
                 guestName: name,
-                dates: datesJSON, // Note: Assure-toi que ton schema a bien 'selectedDates' ou 'dates' (on a utilisé 'dates' String @db.Text dans le dernier schema valide)
-                comment: comment,
+                dates: dates.length > 0 ? JSON.stringify(dates) : null,
+                choices: choices.length > 0 ? JSON.stringify(choices) : null,
+                comment: comment || null,
                 eventId: tokenDoc.eventId,
                 tokenId: tokenId
             }
